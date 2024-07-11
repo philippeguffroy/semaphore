@@ -71,42 +71,6 @@ type oidcEndpoint struct {
 	Algorithms  []string `json:"algorithms"`
 }
 
-type OidcProvider struct {
-	ClientID         string       `json:"client_id"`
-	ClientIDFile     string       `json:"client_id_file"`
-	ClientSecret     string       `json:"client_secret"`
-	ClientSecretFile string       `json:"client_secret_file"`
-	RedirectURL      string       `json:"redirect_url"`
-	Scopes           []string     `json:"scopes"`
-	DisplayName      string       `json:"display_name"`
-	Color            string       `json:"color"`
-	Icon             string       `json:"icon"`
-	AutoDiscovery    string       `json:"provider_url"`
-	Endpoint         oidcEndpoint `json:"endpoint"`
-	UsernameClaim    string       `json:"username_claim" default:"preferred_username"`
-	NameClaim        string       `json:"name_claim" default:"preferred_username"`
-	EmailClaim       string       `json:"email_claim" default:"email"`
-	Order            int          `json:"order"`
-}
-
-type ClaimsProvider interface {
-	GetUsernameClaim() string
-	GetEmailClaim() string
-	GetNameClaim() string
-}
-
-func (p *OidcProvider) GetUsernameClaim() string {
-	return p.UsernameClaim
-}
-
-func (p *OidcProvider) GetEmailClaim() string {
-	return p.EmailClaim
-}
-
-func (p *OidcProvider) GetNameClaim() string {
-	return p.NameClaim
-}
-
 const (
 	// GoGitClientId is builtin Git client. It is not require external dependencies and is preferred.
 	// Use it if you don't need external SSH authorization.
@@ -141,17 +105,6 @@ type RunnerSettings struct {
 
 	Webhook          string `json:"webhook" env:"SEMAPHORE_RUNNER_WEBHOOK"`
 	MaxParallelTasks int    `json:"max_parallel_tasks" default:"1" env:"SEMAPHORE_RUNNER_MAX_PARALLEL_TASKS"`
-}
-
-type AppVersion struct {
-	Semver      string `json:"semver"`
-	DownloadURL string `json:"download_url"`
-	Path        string `json:"path"`
-}
-
-type AppConfig struct {
-	Name     string       `json:"name"`
-	Versions []AppVersion `json:"versions"`
 }
 
 // ConfigType mapping between Config and the json file that sets it
@@ -222,7 +175,8 @@ type ConfigType struct {
 	// oidc settings
 	OidcProviders map[string]OidcProvider `json:"oidc_providers"`
 
-	MaxTaskDurationSec int `json:"max_task_duration_sec" env:"MAX_TASK_DURATION_SEC"`
+	MaxTaskDurationSec  int `json:"max_task_duration_sec" env:"SEMAPHORE_MAX_TASK_DURATION_SEC"`
+	MaxTasksPerTemplate int `json:"max_tasks_per_template" env:"SEMAPHORE_MAX_TASKS_PER_TEMPLATE"`
 
 	// task concurrency
 	MaxParallelTasks int `json:"max_parallel_tasks" default:"10" rule:"^[0-9]{1,10}$" env:"SEMAPHORE_MAX_PARALLEL_TASKS"`
@@ -237,9 +191,9 @@ type ConfigType struct {
 
 	Runner RunnerSettings `json:"runner"`
 
-	GlobalIntegrationAlias string `json:"global_integration_alias"`
+	IntegrationAlias string `json:"global_integration_alias" env:"SEMAPHORE_INTEGRATION_ALIAS"`
 
-	Apps []AppConfig `json:"apps" env:"SEMAPHORE_APPS"`
+	Apps map[string]App `json:"apps" env:"SEMAPHORE_APPS"`
 }
 
 // Config exposes the application configuration storage for use in the application
@@ -296,6 +250,17 @@ func LoadRunnerSettings(path string) (config RunnerConfig, err error) {
 // ConfigInit reads in cli flags, and switches actions appropriately on them
 func ConfigInit(configPath string) {
 	fmt.Println("Loading config")
+
+	Config = &ConfigType{}
+	Config.Apps = map[string]App{
+		"ansible":    {},
+		"terraform":  {},
+		"tofu":       {},
+		"bash":       {},
+		"powershell": {},
+		"python":     {},
+	}
+
 	loadConfigFile(configPath)
 	loadConfigEnvironment()
 	loadConfigDefaults()
@@ -440,28 +405,52 @@ func castStringToBool(value string) bool {
 
 }
 
+func CastValueToKind(value interface{}, kind reflect.Kind) (res interface{}, ok bool) {
+	res = value
+
+	switch kind {
+	case reflect.Slice:
+		if reflect.ValueOf(value).Kind() == reflect.String {
+			var arr []string
+			err := json.Unmarshal([]byte(value.(string)), &arr)
+			if err != nil {
+				panic(err)
+			}
+			res = arr
+			ok = true
+		}
+	case reflect.String:
+		ok = true
+	case reflect.Int:
+		if reflect.ValueOf(value).Kind() != reflect.Int {
+			res = castStringToInt(fmt.Sprintf("%v", reflect.ValueOf(value)))
+			ok = true
+		}
+	case reflect.Bool:
+		if reflect.ValueOf(value).Kind() != reflect.Bool {
+			res = castStringToBool(fmt.Sprintf("%v", reflect.ValueOf(value)))
+			ok = true
+		}
+	case reflect.Map:
+		if reflect.ValueOf(value).Kind() == reflect.String {
+			mapValue := make(map[string]string)
+			err := json.Unmarshal([]byte(value.(string)), &mapValue)
+			if err != nil {
+				panic(err)
+			}
+			res = mapValue
+			ok = true
+		}
+	default:
+	}
+
+	return
+}
+
 func setConfigValue(attribute reflect.Value, value interface{}) {
 
 	if attribute.IsValid() {
-		switch attribute.Kind() {
-		case reflect.Int:
-			if reflect.ValueOf(value).Kind() != reflect.Int {
-				value = castStringToInt(fmt.Sprintf("%v", reflect.ValueOf(value)))
-			}
-		case reflect.Bool:
-			if reflect.ValueOf(value).Kind() != reflect.Bool {
-				value = castStringToBool(fmt.Sprintf("%v", reflect.ValueOf(value)))
-			}
-		case reflect.Map:
-			if reflect.ValueOf(value).Kind() == reflect.String {
-				mapValue := make(map[string]string)
-				err := json.Unmarshal([]byte(value.(string)), &mapValue)
-				if err != nil {
-					panic(err)
-				}
-				value = mapValue
-			}
-		}
+		value, _ = CastValueToKind(value, attribute.Kind())
 		attribute.Set(reflect.ValueOf(value))
 	} else {
 		panic(fmt.Errorf("got non-existent config attribute"))
@@ -820,4 +809,43 @@ func (conf *ConfigType) GenerateSecrets() {
 	conf.CookieHash = base64.StdEncoding.EncodeToString(hash)
 	conf.CookieEncryption = base64.StdEncoding.EncodeToString(encryption)
 	conf.AccessKeyEncryption = base64.StdEncoding.EncodeToString(accessKeyEncryption)
+}
+
+func LookupDefaultApps() {
+	appCommands := map[string]string{
+		"ansible":   "ansible-playbook",
+		"terraform": "terraform",
+		"tofu":      "tofu",
+		"bash":      "bash",
+	}
+
+	for app, cmd := range appCommands {
+		if _, ok := Config.Apps[app]; ok {
+			continue
+		}
+
+		_, err := exec.LookPath(cmd)
+
+		if err != nil {
+			continue
+		}
+
+		if Config.Apps == nil {
+			Config.Apps = make(map[string]App)
+		}
+
+		Config.Apps[app] = App{
+			Active: true,
+		}
+	}
+}
+
+func PrintDebug() {
+	envs := os.Environ()
+	for _, e := range envs {
+		fmt.Println(e)
+	}
+
+	b, _ := Config.ToJSON()
+	fmt.Println(string(b))
 }

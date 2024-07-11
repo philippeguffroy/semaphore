@@ -23,7 +23,7 @@
     <v-subheader class="px-0">
       {{ $t('extraVariables') }}
 
-      <v-tooltip bottom color="black" open-delay="300">
+      <v-tooltip bottom color="black" open-delay="300" max-width="400">
         <template v-slot:activator="{ on, attrs }">
           <v-icon
             class="ml-1"
@@ -31,7 +31,10 @@
             v-on="on"
           >mdi-help-circle</v-icon>
         </template>
-        <span>Variables passed via <code>--extra-vars</code>.</span>
+        <span>
+          Variables passed via <code>--extra-vars</code> (Ansible) or
+          <code>-var</code> (Terraform/OpenTofu).
+        </span>
       </v-tooltip>
 
       <v-spacer />
@@ -41,21 +44,76 @@
         tile
         group
       >
-        <v-btn value="json" small class="mr-0" style="border-radius: 4px;" disabled>
+        <v-btn value="table" small class="mr-0" style="border-radius: 4px;">
+          Table
+        </v-btn>
+        <v-btn value="json" small class="mr-0" style="border-radius: 4px;">
           JSON
         </v-btn>
       </v-btn-toggle>
     </v-subheader>
 
     <codemirror
+      v-if="extraVarsEditMode === 'json'"
       :style="{ border: '1px solid lightgray' }"
       v-model="json"
       :options="cmOptions"
       :placeholder="$t('enterExtraVariablesJson')"
     />
 
-    <div>
+    <div v-else-if="extraVarsEditMode === 'table'">
+      <v-data-table
+        v-if="extraVars != null"
+        :items="extraVars"
+        :items-per-page="-1"
+        class="elevation-1"
+        hide-default-footer
+        no-data-text="No values"
+      >
+        <template v-slot:item="props">
+          <tr>
+            <td class="pa-1">
+              <v-text-field
+                solo-inverted
+                flat
+                hide-details
+                v-model="props.item.name"
+                class="v-text-field--solo--no-min-height"
+                :placeholder="$t('name')"
+              ></v-text-field>
+            </td>
+            <td class="pa-1">
+              <v-text-field
+                solo-inverted
+                flat
+                hide-details
+                v-model="props.item.value"
+                class="v-text-field--solo--no-min-height"
+                :placeholder="$t('Value')"
+              ></v-text-field>
+            </td>
+            <td style="width: 38px;">
+              <v-icon
+                small
+                class="pa-1"
+                @click="removeExtraVar(props.item)"
+              >
+                mdi-delete
+              </v-icon>
+            </td>
+          </tr>
+        </template>
+      </v-data-table>
+      <div class="mt-2 mb-4 mx-1" v-if="extraVars != null">
+        <v-btn
+          color="primary"
+          @click="addExtraVar()"
+        >New Variable</v-btn>
+      </div>
+      <v-alert color="error" v-else>Can't be displayed as table.</v-alert>
+    </div>
 
+    <div>
       <v-subheader class="px-0 mt-4">
         {{ $t('environmentVariables') }}
 
@@ -71,41 +129,6 @@
           <span>Variables passed as process environment variables.</span>
         </v-tooltip>
       </v-subheader>
-
-      <v-chip-group
-        v-model="predefinedEnvVars"
-        column
-        multiple
-        class="EnvironmentForm__predefinedEnvVars"
-      >
-        <v-chip
-          filter
-          outlined
-          v-for="item in PREDEFINED_ENV_VARS"
-          :key="item.name"
-        >
-          <span class="EnvironmentForm__predefinedEnvVarsValue">
-            {{ item.name }}={{ item.value }}
-          </span>
-          <v-tooltip
-            bottom
-            color="black"
-            :max-width="400"
-            open-delay="300"
-          >
-            <template v-slot:activator="{ on, attrs }">
-              <v-icon
-                class="ml-2"
-                v-bind="attrs"
-                v-on="on"
-                style="margin-right: -6px;"
-              >mdi-help-circle</v-icon>
-            </template>
-            <span>{{ item.description }}</span>
-          </v-tooltip>
-        </v-chip>
-      </v-chip-group>
-
       <v-data-table
         :items="env"
         :items-per-page="-1"
@@ -122,6 +145,7 @@
                 hide-details
                 v-model="props.item.name"
                 class="v-text-field--solo--no-min-height"
+                :placeholder="$t('name')"
               ></v-text-field>
             </td>
             <td class="pa-1">
@@ -131,6 +155,7 @@
                 hide-details
                 v-model="props.item.value"
                 class="v-text-field--solo--no-min-height"
+                :placeholder="$t('Value')"
               ></v-text-field>
             </td>
             <td style="width: 38px;">
@@ -145,31 +170,87 @@
           </tr>
         </template>
       </v-data-table>
-
-      <div class="text-right mt-2 mb-4">
+      <div class="mt-2 mb-4 mx-1">
         <v-btn
           color="primary"
           @click="addEnvVar()"
-        >New Variable</v-btn>
+        >New Environment Variable</v-btn>
+      </div>
+    </div>
+
+    <div>
+      <v-subheader class="px-0 mt-4">
+        {{ $t('Secrets') }}
+
+        <v-tooltip bottom color="black" open-delay="300" max-width="400">
+          <template v-slot:activator="{ on, attrs }">
+            <v-icon
+              class="ml-1"
+              v-bind="attrs"
+              v-on="on"
+              color="lightgray"
+            >mdi-help-circle</v-icon>
+          </template>
+          <span>
+            Secrets are stored in the database in encrypted form.
+            Secrets passed via <code>--extra-vars</code> (Ansible) or
+            <code>-var</code> (Terraform/OpenTofu).
+          </span>
+        </v-tooltip>
+      </v-subheader>
+
+      <v-data-table
+        :items="secrets.filter(s => !s.remove)"
+        :items-per-page="-1"
+        class="elevation-1"
+        hide-default-footer
+        no-data-text="No values"
+      >
+        <template v-slot:item="props">
+          <tr>
+            <td class="pa-1">
+              <v-text-field
+                solo-inverted
+                flat
+                hide-details
+                v-model="props.item.name"
+                class="v-text-field--solo--no-min-height"
+                :placeholder="$t('name')"
+              ></v-text-field>
+            </td>
+            <td class="pa-1">
+              <v-text-field
+                solo-inverted
+                flat
+                hide-details
+                v-model="props.item.value"
+                placeholder="*******"
+                class="v-text-field--solo--no-min-height"
+              ></v-text-field>
+            </td>
+            <td style="width: 38px;">
+              <v-icon
+                small
+                class="pa-1"
+                @click="removeSecret(props.item)"
+              >
+                mdi-delete
+              </v-icon>
+            </td>
+          </tr>
+        </template>
+      </v-data-table>
+
+      <div class="mt-2 mb-4 mx-1">
+        <v-btn
+          color="primary"
+          @click="addSecret()"
+        >New Secret</v-btn>
       </div>
     </div>
 
   </v-form>
 </template>
-
-<style lang="scss">
-.EnvironmentForm__predefinedEnvVars {
-  .EnvironmentForm__predefinedEnvVarsValue {
-    text-decoration: line-through;
-    font-family: monospace;
-  }
-  .v-chip--active {
-    .EnvironmentForm__predefinedEnvVarsValue {
-      text-decoration: none;
-    }
-  }
-}
-</style>
 
 <script>
 /* eslint-disable import/no-extraneous-dependencies,import/extensions */
@@ -180,14 +261,15 @@ import { codemirror } from 'vue-codemirror';
 import 'codemirror/lib/codemirror.css';
 import 'codemirror/mode/vue/vue.js';
 import 'codemirror/addon/display/placeholder.js';
-import EventBus from '@/event-bus';
 import { getErrorMessage } from '@/lib/error';
+// import EventBus from '@/event-bus';
+// import { getErrorMessage } from '@/lib/error';
 
-const PREDEFINED_ENV_VARS = [{
-  name: 'ANSIBLE_HOST_KEY_CHECKING',
-  value: 'False',
-  description: 'Avoid host key checking by the tools Ansible uses to connect to the host.',
-}];
+// const PREDEFINED_ENV_VARS = [{
+//   name: 'ANSIBLE_HOST_KEY_CHECKING',
+//   value: 'False',
+//   description: 'Avoid host key checking by the tools Ansible uses to connect to the host.',
+// }];
 
 export default {
   mixins: [ItemFormBase],
@@ -198,15 +280,58 @@ export default {
   created() {
   },
 
+  watch: {
+    extraVarsEditMode(val) {
+      let extraVars;
+
+      switch (val) {
+        case 'json':
+          if (this.extraVars == null) {
+            return;
+          }
+
+          this.json = JSON.stringify(this.extraVars.reduce((prev, curr) => ({
+            ...prev,
+            [curr.name]: curr.value,
+          }), {}), null, 2);
+          break;
+        case 'table':
+          try {
+            extraVars = JSON.parse(this.json);
+            this.formError = null;
+          } catch (err) {
+            this.formError = getErrorMessage(err);
+            this.extraVars = null;
+            return;
+          }
+          if (Object.keys(extraVars).some((x) => typeof extraVars[x] === 'object')) {
+            this.extraVars = null;
+          } else {
+            this.extraVars = Object.keys(extraVars)
+              .map((x) => ({
+                name: x,
+                value: extraVars[x],
+              }));
+          }
+          break;
+        default:
+          throw new Error(`Invalid extra variables edit mode: ${val}`);
+      }
+    },
+  },
+
   data() {
     return {
-      PREDEFINED_ENV_VARS,
+      // PREDEFINED_ENV_VARS,
       images: [
         'dind-runner:latest',
       ],
       advancedOptions: false,
+
       json: '{}',
+      extraVars: [],
       env: [],
+      secrets: [],
 
       cmOptions: {
         tabSize: 2,
@@ -218,11 +343,22 @@ export default {
       },
 
       extraVarsEditMode: 'json',
-      predefinedEnvVars: [],
+      // predefinedEnvVars: [],
     };
   },
 
   methods: {
+    addExtraVar(name = '', value = '') {
+      this.extraVars.push({ name, value });
+    },
+
+    removeExtraVar(val) {
+      const i = this.extraVars.findIndex((v) => v.name === val.name);
+      if (i > -1) {
+        this.extraVars.splice(i, 1);
+      }
+    },
+
     addEnvVar(name = '', value = '') {
       this.env.push({ name, value });
     },
@@ -234,56 +370,135 @@ export default {
       }
     },
 
-    setExtraVar(name, value) {
-      try {
-        const obj = JSON.parse(this.json || '{}');
-        obj[name] = value;
-        this.json = JSON.stringify(obj, null, 2);
-      } catch (err) {
-        EventBus.$emit('i-snackbar', {
-          color: 'error',
-          text: getErrorMessage(err),
-        });
+    addSecret(name = '', value = '') {
+      this.secrets.push({ name, value, new: true });
+    },
+
+    removeSecret(val) {
+      const i = this.secrets.findIndex((v) => v.name === val.name);
+      if (i > -1) {
+        const s = this.secrets[i];
+        this.secrets.splice(i, 1);
+
+        if (!this.secrets[i].new) {
+          this.secrets.push({
+            ...s,
+            remove: true,
+          });
+        }
       }
     },
 
+    // setExtraVar(name, value) {
+    //   try {
+    //     const obj = JSON.parse(this.json || '{}');
+    //     if (value == null) {
+    //       delete obj[name];
+    //     } else {
+    //       obj[name] = value;
+    //     }
+    //     this.json = JSON.stringify(obj, null, 2);
+    //   } catch (err) {
+    //     EventBus.$emit('i-snackbar', {
+    //       color: 'error',
+    //       text: getErrorMessage(err),
+    //     });
+    //   }
+    // },
+
     beforeSave() {
-      this.item.json = this.json;
+      switch (this.extraVarsEditMode) {
+        case 'json':
+          this.item.json = this.json;
+          break;
+        case 'table':
+          if (this.extraVars == null) {
+            this.item.json = this.json;
+          } else {
+            this.item.json = JSON.stringify(this.extraVars.reduce((prev, curr) => ({
+              ...prev,
+              [curr.name]: curr.value,
+            }), {}));
+          }
+          break;
+        default:
+          throw new Error(`Invalid extra variables edit mode: ${this.extraVarsEditMode}`);
+      }
 
       const env = (this.env || []).reduce((prev, curr) => ({
         ...prev,
         [curr.name]: curr.value,
       }), {});
 
-      this.predefinedEnvVars.forEach((index) => {
-        const predefinedVar = PREDEFINED_ENV_VARS[index];
-        env[predefinedVar.name] = predefinedVar.value;
-      });
+      // this.predefinedEnvVars.forEach((index) => {
+      //   const predefinedVar = PREDEFINED_ENV_VARS[index];
+      //   env[predefinedVar.name] = predefinedVar.value;
+      // });
+
+      const secrets = (this.secrets || []).map((s) => {
+        let operation;
+        if (s.new) {
+          operation = 'create';
+        } else if (s.remove) {
+          operation = 'delete';
+        } else if (s.value !== '') {
+          operation = 'update';
+        }
+        return {
+          id: s.id,
+          name: s.name,
+          secret: s.value,
+          operation,
+        };
+      }).filter((s) => s.operation != null);
 
       this.item.env = JSON.stringify(env);
+      this.item.secrets = secrets;
     },
 
     afterLoadData() {
-      this.json = this.item?.json || '{}';
+      this.json = JSON.stringify(JSON.parse(this.item?.json || '{}'), null, 2);
+
+      const json = JSON.parse(this.item?.json || '{}');
 
       const env = JSON.parse(this.item?.env || '{}');
 
+      const secrets = this.item?.secrets || [];
+
+      if (Object.keys(json).some((x) => typeof json[x] === 'object')) {
+        this.extraVars = null;
+        this.extraVarsEditMode = 'json';
+      } else {
+        this.extraVars = Object.keys(json)
+          .map((x) => ({
+            name: x,
+            value: json[x],
+          }));
+        this.extraVarsEditMode = 'table';
+      }
+
       this.env = Object.keys(env)
-        .filter((x) => {
-          const index = PREDEFINED_ENV_VARS.findIndex((v) => v.name === x);
-          return index === -1 || PREDEFINED_ENV_VARS[index].value !== env[x];
-        })
+        // .filter((x) => {
+        //   const index = PREDEFINED_ENV_VARS.findIndex((v) => v.name === x);
+        //   return index === -1 || PREDEFINED_ENV_VARS[index].value !== env[x];
+        // })
         .map((x) => ({
           name: x,
           value: env[x],
         }));
 
-      Object.keys(env).forEach((x) => {
-        const index = PREDEFINED_ENV_VARS.findIndex((v) => v.name === x);
-        if (index !== -1 && PREDEFINED_ENV_VARS[index].value === env[x]) {
-          this.predefinedEnvVars.push(index);
-        }
-      });
+      this.secrets = secrets.map((x) => ({
+        id: x.id,
+        name: x.name,
+        value: '',
+      }));
+
+      // Object.keys(env).forEach((x) => {
+      //   const index = PREDEFINED_ENV_VARS.findIndex((v) => v.name === x);
+      //   if (index !== -1 && PREDEFINED_ENV_VARS[index].value === env[x]) {
+      //     this.predefinedEnvVars.push(index);
+      //   }
+      // });
     },
 
     getItemsUrl() {

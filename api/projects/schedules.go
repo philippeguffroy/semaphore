@@ -42,6 +42,17 @@ func GetSchedule(w http.ResponseWriter, r *http.Request) {
 	helpers.WriteJSON(w, http.StatusOK, schedule)
 }
 
+func GetProjectSchedules(w http.ResponseWriter, r *http.Request) {
+	project := context.Get(r, "project").(db.Project)
+
+	tplSchedules, err := helpers.Store(r).GetProjectSchedules(project.ID)
+	if err != nil {
+		helpers.WriteError(w, err)
+		return
+	}
+
+	helpers.WriteJSON(w, http.StatusOK, tplSchedules)
+}
 func GetTemplateSchedules(w http.ResponseWriter, r *http.Request) {
 	project := context.Get(r, "project").(db.Project)
 	templateID, err := helpers.GetIntParam("template_id", w, r)
@@ -155,6 +166,36 @@ func UpdateSchedule(w http.ResponseWriter, r *http.Request) {
 		ObjectType:  db.EventSchedule,
 		ObjectID:    oldSchedule.ID,
 		Description: fmt.Sprintf("Schedule ID %d updated", schedule.ID),
+	})
+
+	refreshSchedulePool(r)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func SetScheduleActive(w http.ResponseWriter, r *http.Request) {
+	oldSchedule := context.Get(r, "schedule").(db.Schedule)
+
+	var schedule struct {
+		Active bool `json:"active"`
+	}
+
+	if !helpers.Bind(w, r, &schedule) {
+		return
+	}
+
+	err := helpers.Store(r).SetScheduleActive(oldSchedule.ProjectID, oldSchedule.ID, schedule.Active)
+	if err != nil {
+		helpers.WriteError(w, err)
+		return
+	}
+
+	helpers.EventLog(r, helpers.EventLogUpdate, helpers.EventLogItem{
+		UserID:      helpers.UserFromContext(r).ID,
+		ProjectID:   oldSchedule.ProjectID,
+		ObjectType:  db.EventSchedule,
+		ObjectID:    oldSchedule.ID,
+		Description: fmt.Sprintf("Schedule ID %d updated", oldSchedule.ID),
 	})
 
 	refreshSchedulePool(r)

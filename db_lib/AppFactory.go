@@ -18,27 +18,19 @@ func CreateApp(template db.Template, repository db.Repository, logger task_logge
 				Logger:     logger,
 			},
 		}
-	case db.TemplateTerraform:
+	case db.TemplateTerraform, db.TemplateTofu:
 		return &TerraformApp{
 			Template:   template,
 			Repository: repository,
 			Logger:     logger,
-			Name:       TerraformAppTerraform,
-		}
-	case db.TemplateTofu:
-		return &TerraformApp{
-			Template:   template,
-			Repository: repository,
-			Logger:     logger,
-			Name:       TerraformAppTofu,
-		}
-	case db.TemplateBash:
-		return &BashApp{
-			Template:   template,
-			Repository: repository,
-			Logger:     logger,
+			Name:       TerraformAppName(template.App),
 		}
 	default:
-		panic("unknown app")
+		return &ShellApp{
+			Template:   template,
+			Repository: repository,
+			Logger:     logger,
+			App:        template.App,
+		}
 	}
 }

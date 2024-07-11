@@ -38,6 +38,17 @@ type TaskRunner struct {
 	RunnerID        int
 	Username        string
 	IncomingVersion *string
+
+	statusListeners []task_logger.StatusListener
+	logListeners    []task_logger.LogListener
+}
+
+func (t *TaskRunner) AddStatusListener(l task_logger.StatusListener) {
+	t.statusListeners = append(t.statusListeners, l)
+}
+
+func (t *TaskRunner) AddLogListener(l task_logger.LogListener) {
+	t.logListeners = append(t.logListeners, l)
 }
 
 func (t *TaskRunner) saveStatus() {
@@ -147,7 +158,7 @@ func (t *TaskRunner) run() {
 	err = t.job.Run(username, incomingVersion)
 
 	if err != nil {
-		t.Log("Running playbook failed: " + err.Error())
+		t.Log("Running app failed: " + err.Error())
 		t.SetStatus(task_logger.TaskFailStatus)
 		return
 	}
@@ -161,7 +172,7 @@ func (t *TaskRunner) run() {
 		AutorunOnly:     true,
 	}, db.RetrieveQueryParams{})
 	if err != nil {
-		t.Log("Running playbook failed: " + err.Error())
+		t.Log("Running app failed: " + err.Error())
 		return
 	}
 
@@ -172,7 +183,7 @@ func (t *TaskRunner) run() {
 			BuildTaskID: &t.Task.ID,
 		}, nil, tpl.ProjectID)
 		if err != nil {
-			t.Log("Running playbook failed: " + err.Error())
+			t.Log("Running app failed: " + err.Error())
 			continue
 		}
 	}
@@ -263,6 +274,24 @@ func (t *TaskRunner) populateDetails() error {
 		if err != nil {
 			return err
 		}
+		var secrets []db.AccessKey
+		secrets, err = t.pool.store.GetEnvironmentSecrets(t.Template.ProjectID, *t.Template.EnvironmentID)
+		if err != nil {
+			return err
+		}
+
+		for _, s := range secrets {
+			err = s.DeserializeSecret()
+			if err != nil {
+				return err
+			}
+			t.Environment.Secrets = append(t.Environment.Secrets, db.EnvironmentSecret{
+				ID:     s.ID,
+				Name:   s.Name,
+				Secret: s.String,
+			})
+		}
+
 	}
 
 	if t.Task.Environment != "" {

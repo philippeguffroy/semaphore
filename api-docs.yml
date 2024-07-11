@@ -703,6 +703,9 @@ definitions:
         example: ''
       suppress_success_alerts:
         type: boolean
+      app:
+        type: string
+        example: ansible
       survey_vars:
         type: array
         items:
@@ -774,6 +777,10 @@ definitions:
         type: integer
       template_id:
         type: integer
+      name:
+        type: string
+      active:
+        type: boolean
 
   Schedule:
     type: object
@@ -786,6 +793,10 @@ definitions:
         type: integer
       template_id:
         type: integer
+      name:
+        type: string
+      active:
+        type: boolean
 
   ViewRequest:
     type: object

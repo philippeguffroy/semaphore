@@ -20,15 +20,16 @@ type Task struct {
 	DryRun bool `db:"dry_run" json:"dry_run"`
 	Diff   bool `db:"diff" json:"diff"`
 
-	IntegrationID *int `db:"integration_id" json:"integration_id"`
-
 	// override variables
-	Playbook    string `db:"playbook" json:"playbook"`
-	Environment string `db:"environment" json:"environment"`
-	Limit       string `db:"hosts_limit" json:"limit"`
-	Secret      string `db:"-" json:"secret"`
+	Playbook    string  `db:"playbook" json:"playbook"`
+	Environment string  `db:"environment" json:"environment"`
+	Limit       string  `db:"hosts_limit" json:"limit"`
+	Secret      string  `db:"-" json:"secret"`
+	Arguments   *string `db:"arguments" json:"arguments"`
 
-	UserID *int `db:"user_id" json:"user_id"`
+	UserID        *int `db:"user_id" json:"user_id"`
+	IntegrationID *int `db:"integration_id" json:"integration_id"`
+	ScheduleID    *int `db:"schedule_id" json:"schedule_id"`
 
 	Created time.Time  `db:"created" json:"created"`
 	Start   *time.Time `db:"start" json:"start"`
@@ -42,14 +43,10 @@ type Task struct {
 	// CommitMessage contains message retrieved from git repository after checkout to CommitHash.
 	// It is readonly by API.
 	CommitMessage string `db:"commit_message" json:"commit_message"`
-
-	BuildTaskID *int `db:"build_task_id" json:"build_task_id"`
-
+	BuildTaskID   *int   `db:"build_task_id" json:"build_task_id"`
 	// Version is a build version.
 	// This field available only for Build tasks.
 	Version *string `db:"version" json:"version"`
-
-	Arguments *string `db:"arguments" json:"arguments"`
 
 	InventoryID *int `db:"inventory_id" json:"inventory_id"`
 }
@@ -110,6 +107,7 @@ type TaskWithTpl struct {
 	TemplatePlaybook string       `db:"tpl_playbook" json:"tpl_playbook"`
 	TemplateAlias    string       `db:"tpl_alias" json:"tpl_alias"`
 	TemplateType     TemplateType `db:"tpl_type" json:"tpl_type"`
+	TemplateApp      TemplateApp  `db:"tpl_app" json:"tpl_app"`
 	UserName         *string      `db:"user_name" json:"user_name"`
 	BuildTask        *Task        `db:"-" json:"build_task"`
 }
@@ -120,4 +118,21 @@ type TaskOutput struct {
 	Task   string    `db:"task" json:"task"`
 	Time   time.Time `db:"time" json:"time"`
 	Output string    `db:"output" json:"output"`
+}
+
+type TaskStageType string
+
+const (
+	TaskStageRepositoryClone TaskStageType = "repository_clone"
+	TaskStageTerraformPlan   TaskStageType = "terraform_plan"
+	TaskStageTerraformApply  TaskStageType = "terraform_apply"
+)
+
+type TaskStage struct {
+	TaskID        int           `db:"task_id" json:"task_id"`
+	Start         *time.Time    `db:"start" json:"start"`
+	End           *time.Time    `db:"end" json:"end"`
+	StartOutputID *int          `db:"start_output_id" json:"start_output_id"`
+	EndOutputID   *int          `db:"end_output_id" json:"end_output_id"`
+	Type          TaskStageType `db:"type" json:"type"`
 }

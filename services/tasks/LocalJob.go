@@ -165,23 +165,27 @@ func (t *LocalJob) getEnvironmentENV() (arr []string, err error) {
 }
 
 // nolint: gocyclo
-func (t *LocalJob) getBashArgs(username string, incomingVersion *string) (args []string, err error) {
-	extraVars, err := t.getEnvironmentExtraVars(username, incomingVersion)
+func (t *LocalJob) getShellArgs(username string, incomingVersion *string) (args []string, err error) {
+	//extraVars, err := t.getEnvironmentExtraVars(username, incomingVersion)
 
 	args = append(args, t.Template.Playbook)
 
-	if err != nil {
-		t.Log(err.Error())
-		t.Log("Could not remove command environment, if existant it will be passed to --extra-vars. This is not fatal but be aware of side effects")
-		return
-	}
+	//if err != nil {
+	//	t.Log(err.Error())
+	//	t.Log("Could not remove command environment, if existant it will be passed to --extra-vars. This is not fatal but be aware of side effects")
+	//	return
+	//}
 
-	for name, value := range extraVars {
-		if name == "semaphore_vars" {
-			continue
-		}
-		args = append(args, fmt.Sprintf("%s=%s", name, value))
-	}
+	//for name, value := range extraVars {
+	//	if name == "semaphore_vars" {
+	//		continue
+	//	}
+	//	args = append(args, fmt.Sprintf("%s=%s", name, value))
+	//}
+	//
+	//for _, secret := range t.Environment.Secrets {
+	//	args = append(args, fmt.Sprintf("%s=%s", secret.Name, secret.Secret))
+	//}
 
 	return
 }
@@ -190,12 +194,6 @@ func (t *LocalJob) getBashArgs(username string, incomingVersion *string) (args [
 func (t *LocalJob) getTerraformArgs(username string, incomingVersion *string) (args []string, err error) {
 
 	args = []string{}
-
-	if t.Task.DryRun {
-		args = append(args, "plan")
-	} else {
-		args = append(args, "apply")
-	}
 
 	extraVars, err := t.getEnvironmentExtraVars(username, incomingVersion)
 
@@ -210,6 +208,10 @@ func (t *LocalJob) getTerraformArgs(username string, incomingVersion *string) (a
 			continue
 		}
 		args = append(args, "-var", fmt.Sprintf("%s=%s", name, value))
+	}
+
+	for _, secret := range t.Environment.Secrets {
+		args = append(args, "-var", fmt.Sprintf("%s=%s", secret.Name, secret.Secret))
 	}
 
 	return
@@ -308,6 +310,10 @@ func (t *LocalJob) getPlaybookArgs(username string, incomingVersion *string) (ar
 		args = append(args, "--extra-vars", extraVars)
 	}
 
+	for _, secret := range t.Environment.Secrets {
+		args = append(args, "--extra-vars", fmt.Sprintf("%s=%s", secret.Name, secret.Secret))
+	}
+
 	var templateExtraArgs []string
 	if t.Template.Arguments != nil {
 		err = json.Unmarshal([]byte(*t.Template.Arguments), &templateExtraArgs)
@@ -372,10 +378,8 @@ func (t *LocalJob) Run(username string, incomingVersion *string) (err error) {
 		args, inputs, err = t.getPlaybookArgs(username, incomingVersion)
 	case db.TemplateTerraform, db.TemplateTofu:
 		args, err = t.getTerraformArgs(username, incomingVersion)
-	case db.TemplateBash:
-		args, err = t.getBashArgs(username, incomingVersion)
 	default:
-		panic("unknown template app")
+		args, err = t.getShellArgs(username, incomingVersion)
 	}
 
 	if err != nil {

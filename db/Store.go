@@ -38,6 +38,7 @@ type RetrieveQueryParams struct {
 	Count        int
 	SortBy       string
 	SortInverted bool
+	Filter       string
 }
 
 type ObjectReferrer struct {
@@ -109,8 +110,11 @@ type Store interface {
 	// if a rollback exists
 	TryRollbackMigration(version Migration)
 
+	GetOptions(params RetrieveQueryParams) (map[string]string, error)
 	GetOption(key string) (string, error)
 	SetOption(key string, value string) error
+	DeleteOption(key string) error
+	DeleteOptions(filter string) error
 
 	GetEnvironment(projectID int, environmentID int) (Environment, error)
 	GetEnvironmentRefs(projectID int, environmentID int) (ObjectReferrers, error)
@@ -118,6 +122,7 @@ type Store interface {
 	UpdateEnvironment(env Environment) error
 	CreateEnvironment(env Environment) (Environment, error)
 	DeleteEnvironment(projectID int, templateID int) error
+	GetEnvironmentSecrets(projectID int, environmentID int) ([]AccessKey, error)
 
 	GetInventory(projectID int, inventoryID int) (Inventory, error)
 	GetInventoryRefs(projectID int, inventoryID int) (ObjectReferrers, error)
@@ -197,10 +202,12 @@ type Store interface {
 	DeleteTemplate(projectID int, templateID int) error
 
 	GetSchedules() ([]Schedule, error)
+	GetProjectSchedules(projectID int) ([]ScheduleWithTpl, error)
 	GetTemplateSchedules(projectID int, templateID int) ([]Schedule, error)
 	CreateSchedule(schedule Schedule) (Schedule, error)
 	UpdateSchedule(schedule Schedule) error
 	SetScheduleCommitHash(projectID int, scheduleID int, hash string) error
+	SetScheduleActive(projectID int, scheduleID int, active bool) error
 	GetSchedule(projectID int, scheduleID int) (Schedule, error)
 	DeleteSchedule(projectID int, scheduleID int) error
 
@@ -226,15 +233,17 @@ type Store interface {
 	ExpireSession(userID int, sessionID int) error
 	TouchSession(userID int, sessionID int) error
 
-	CreateTask(task Task) (Task, error)
+	CreateTask(task Task, maxTasks int) (Task, error)
 	UpdateTask(task Task) error
 
-	GetTemplateTasks(projectID int, templateID int, params RetrieveQueryParams) ([]TaskWithTpl, error)
+	GetTemplateTasks(projectID int, templateIDs []int, params RetrieveQueryParams) ([]TaskWithTpl, error)
 	GetProjectTasks(projectID int, params RetrieveQueryParams) ([]TaskWithTpl, error)
 	GetTask(projectID int, taskID int) (Task, error)
 	DeleteTaskWithOutputs(projectID int, taskID int) error
 	GetTaskOutputs(projectID int, taskID int) ([]TaskOutput, error)
 	CreateTaskOutput(output TaskOutput) (TaskOutput, error)
+	GetTaskStages(projectID int, taskID int) ([]TaskStage, error)
+	CreateTaskStage(stage TaskStage) (TaskStage, error)
 
 	GetView(projectID int, viewID int) (View, error)
 	GetViews(projectID int) ([]View, error)
@@ -381,6 +390,11 @@ var TaskOutputProps = ObjectProps{
 	Type:      reflect.TypeOf(TaskOutput{}),
 }
 
+var TaskStageProps = ObjectProps{
+	TableName: "task__stage",
+	Type:      reflect.TypeOf(TaskStage{}),
+}
+
 var ViewProps = ObjectProps{
 	TableName:            "project__view",
 	Type:                 reflect.TypeOf(View{}),
@@ -400,6 +414,15 @@ var OptionProps = ObjectProps{
 	Type:              reflect.TypeOf(Option{}),
 	PrimaryColumnName: "key",
 	IsGlobal:          true,
+}
+
+func findIntIndex(slice []int, value int) int {
+	for i, v := range slice {
+		if v == value {
+			return i
+		}
+	}
+	return -1
 }
 
 func (p ObjectProps) GetReferringFieldsFrom(t reflect.Type) (fields []string, err error) {
