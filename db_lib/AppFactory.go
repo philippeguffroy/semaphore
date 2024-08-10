@@ -5,9 +5,9 @@ import (
 	"github.com/ansible-semaphore/semaphore/pkg/task_logger"
 )
 
-func CreateApp(template db.Template, repository db.Repository, logger task_logger.Logger) LocalApp {
+func CreateApp(template db.Template, repository db.Repository, inventory db.Inventory, logger task_logger.Logger) LocalApp {
 	switch template.App {
-	case db.TemplateAnsible:
+	case db.AppAnsible:
 		return &AnsibleApp{
 			Template:   template,
 			Repository: repository,
@@ -18,12 +18,13 @@ func CreateApp(template db.Template, repository db.Repository, logger task_logge
 				Logger:     logger,
 			},
 		}
-	case db.TemplateTerraform, db.TemplateTofu:
+	case db.AppTerraform, db.AppTofu:
 		return &TerraformApp{
 			Template:   template,
 			Repository: repository,
 			Logger:     logger,
-			Name:       TerraformAppName(template.App),
+			Name:       string(template.App),
+			Inventory:  inventory,
 		}
 	default:
 		return &ShellApp{

@@ -340,7 +340,7 @@ func (p *TaskPool) AddTask(taskObj db.Task, userID *int, projectID int) (newTask
 
 	if tpl.Type == db.TemplateBuild { // get next version for TaskRunner if it is a Build
 		var builds []db.TaskWithTpl
-		builds, err = p.store.GetTemplateTasks(tpl.ProjectID, []int{tpl.ID}, db.RetrieveQueryParams{Count: 1})
+		builds, err = p.store.GetTemplateTasks(tpl.ProjectID, tpl.ID, db.RetrieveQueryParams{Count: 1})
 		if err != nil {
 			return
 		}
@@ -377,7 +377,12 @@ func (p *TaskPool) AddTask(taskObj db.Task, userID *int, projectID int) (newTask
 			taskPool: p,
 		}
 	} else {
-		app := db_lib.CreateApp(taskRunner.Template, taskRunner.Repository, &taskRunner)
+		app := db_lib.CreateApp(
+			taskRunner.Template,
+			taskRunner.Repository,
+			taskRunner.Inventory,
+			&taskRunner)
+
 		job = &LocalJob{
 			Task:        taskRunner.Task,
 			Template:    taskRunner.Template,

@@ -105,6 +105,14 @@ func (d *SqlDb) UpdateTemplate(template db.Template) error {
 }
 
 func (d *SqlDb) GetTemplates(projectID int, filter db.TemplateFilter, params db.RetrieveQueryParams) (templates []db.Template, err error) {
+
+	templates = []db.Template{}
+
+	type templateWithLastTask struct {
+		db.Template
+		LastTaskID *int `db:"last_task_id"`
+	}
+
 	q := squirrel.Select("pt.id",
 		"pt.project_id",
 		"pt.inventory_id",
@@ -122,7 +130,8 @@ func (d *SqlDb) GetTemplates(projectID int, filter db.TemplateFilter, params db.
 		"pt.survey_vars",
 		"pt.start_version",
 		"pt.`type`",
-		"pt.`tasks`").
+		"pt.`tasks`",
+		"(SELECT `id` FROM `task` WHERE template_id = pt.id ORDER BY `id` DESC LIMIT 1) last_task_id").
 		From("project__template pt")
 
 	if filter.ViewID != nil {
@@ -168,13 +177,47 @@ func (d *SqlDb) GetTemplates(projectID int, filter db.TemplateFilter, params db.
 		return
 	}
 
-	_, err = d.selectAll(&templates, query, args...)
+	var tpls []templateWithLastTask
+
+	_, err = d.selectAll(&tpls, query, args...)
 
 	if err != nil {
 		return
 	}
 
-	err = db.FillTemplates(d, templates)
+	taskIDs := make([]int, 0)
+
+	for _, tpl := range tpls {
+		if tpl.LastTaskID != nil {
+			taskIDs = append(taskIDs, *tpl.LastTaskID)
+		}
+	}
+
+	var tasks []db.TaskWithTpl
+	err = d.getTasks(projectID, nil, taskIDs, db.RetrieveQueryParams{}, &tasks)
+
+	if err != nil {
+		return
+	}
+
+	for _, tpl := range tpls {
+		template := tpl.Template
+
+		if tpl.LastTaskID != nil {
+			for _, tsk := range tasks {
+				if tsk.ID == *tpl.LastTaskID {
+					err = tsk.Fill(d)
+					if err != nil {
+						return
+					}
+					template.LastTask = &tsk
+					break
+				}
+			}
+		}
+
+		templates = append(templates, template)
+	}
 
 	return
 }

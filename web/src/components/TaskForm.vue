@@ -88,71 +88,13 @@
       />
     </div>
 
-    <v-row no-gutters class="mt-6">
-      <v-col cols="12" sm="6">
-        <v-checkbox class="mt-0" v-model="item.debug">
-          <template v-slot:label>
-            <div class="text-no-wrap">{{ $t('debug') }} <code>--vvvv</code></div>
-          </template>
-        </v-checkbox>
-      </v-col>
-      <v-col cols="12" sm="6">
-        <v-checkbox class="mt-0" v-model="item.dry_run">
-          <template v-slot:label>
-            <div class="text-no-wrap">{{ $t('dryRun') }} <code>--check</code></div>
-          </template>
-        </v-checkbox>
-      </v-col>
-      <v-col cols="12" sm="6">
-        <v-checkbox class="mt-0" v-model="item.diff">
-          <template v-slot:label>
-            <div class="text-no-wrap">{{ $t('diff') }} <code>--diff</code></div>
-          </template>
-        </v-checkbox>
-      </v-col>
-    </v-row>
+    <TaskParamsForm v-if="template.app === 'ansible'" v-model="item" :app="template.app" />
+    <TaskParamsForm v-else v-model="item.params" :app="template.app" />
 
-    <div class="mt-4" v-if="!advancedOptions">
-      <a @click="advancedOptions = true">
-        {{ $t('advanced') }}
-        <v-icon style="transform: translateY(-1px)">mdi-chevron-right</v-icon>
-      </a>
-    </div>
-
-    <div class="mt-4" v-else>
-      <a @click="advancedOptions = false">
-        {{ $t('hide') }}
-        <v-icon style="transform: translateY(-1px)">mdi-chevron-up</v-icon>
-      </a>
-    </div>
-
-    <v-alert
-      v-if="advancedOptions && !template.allow_override_args_in_task"
-      color="info"
-      dense
-      text
-      class="mb-2"
-    >
-      <div style="position: relative; margin-top: 10px;">
-        <video
-          autoplay
-          muted
-          style="width: 100%; border-radius: 4px;"
-        >
-          <source
-            src="/allow-override-cli-args-in-task.mp4"
-            type="video/mp4"/>
-        </video>
-      </div>
-    </v-alert>
-
-    <codemirror
-      class="mt-4"
-      v-if="advancedOptions && template.allow_override_args_in_task"
-      :style="{ border: '1px solid lightgray' }"
-      v-model="item.arguments"
-      :options="cmOptions"
-      :placeholder="$t('cliArgsJsonArrayExampleIMyinventoryshPrivatekeythe')"
+    <ArgsPicker
+      v-if="template.allow_override_args_in_task"
+      :vars="args"
+      @change="setArgs"
     />
 
   </v-form>
@@ -162,11 +104,13 @@
 
 import ItemFormBase from '@/components/ItemFormBase';
 import axios from 'axios';
-import { codemirror } from 'vue-codemirror';
+// import { codemirror } from 'vue-codemirror';
 import 'codemirror/lib/codemirror.css';
 import 'codemirror/mode/vue/vue.js';
 import 'codemirror/addon/lint/json-lint.js';
 import 'codemirror/addon/display/placeholder.js';
+import TaskParamsForm from '@/components/TaskParamsForm.vue';
+import ArgsPicker from '@/components/ArgsPicker.vue';
 
 export default {
   mixins: [ItemFormBase],
@@ -175,7 +119,9 @@ export default {
     sourceTask: Object,
   },
   components: {
-    codemirror,
+    ArgsPicker,
+    TaskParamsForm,
+    // codemirror,
   },
   data() {
     return {
@@ -192,9 +138,15 @@ export default {
         lint: true,
         indentWithTabs: false,
       },
-      advancedOptions: false,
+      // advancedOptions: false,
     };
   },
+  computed: {
+    args() {
+      return JSON.parse(this.item.arguments || '[]');
+    },
+  },
+
   watch: {
     needReset(val) {
       if (val) {
@@ -216,7 +168,12 @@ export default {
       }
     },
   },
+
   methods: {
+    setArgs(args) {
+      this.item.arguments = JSON.stringify(args || []);
+    },
+
     getTaskMessage(task) {
       let buildTask = task;
 
@@ -263,7 +220,11 @@ export default {
 
       this.item.template_id = this.templateId;
 
-      this.advancedOptions = this.item.arguments != null;
+      if (!this.item.params) {
+        this.item.params = {};
+      }
+
+      // this.advancedOptions = this.item.arguments != null;
 
       this.template = (await axios({
         keys: 'get',

@@ -2,24 +2,26 @@ package projects
 
 import (
 	"fmt"
-	"net/http"
-
 	"github.com/ansible-semaphore/semaphore/api/helpers"
 	"github.com/ansible-semaphore/semaphore/db"
+	"net/http"
 
 	"github.com/gorilla/context"
 )
 
 func updateEnvironmentSecrets(store db.Store, env db.Environment) error {
 	for _, secret := range env.Secrets {
-		var err error
+		err := secret.Validate()
+		if err != nil {
+			continue
+		}
 
 		var key db.AccessKey
 
 		switch secret.Operation {
 		case db.EnvironmentSecretCreate:
 			key, err = store.CreateAccessKey(db.AccessKey{
-				Name:          secret.Name,
+				Name:          string(secret.Type) + "." + secret.Name,
 				String:        secret.Secret,
 				EnvironmentID: &env.ID,
 				ProjectID:     &env.ProjectID,
@@ -49,7 +51,7 @@ func updateEnvironmentSecrets(store db.Store, env db.Environment) error {
 			}
 
 			err = store.UpdateAccessKey(db.AccessKey{
-				Name:   secret.Name,
+				Name:   string(secret.Type) + "." + secret.Name,
 				String: secret.Secret,
 				Type:   db.AccessKeyString,
 			})
@@ -76,18 +78,9 @@ func EnvironmentMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		keys, err := helpers.Store(r).GetEnvironmentSecrets(env.ProjectID, env.ID)
-
-		if err != nil {
+		if err = db.FillEnvironmentSecrets(helpers.Store(r), &env, false); err != nil {
 			helpers.WriteError(w, err)
 			return
-		}
-
-		for _, k := range keys {
-			env.Secrets = append(env.Secrets, db.EnvironmentSecret{
-				ID:   k.ID,
-				Name: k.Name,
-			})
 		}
 
 		context.Set(r, "environment", env)

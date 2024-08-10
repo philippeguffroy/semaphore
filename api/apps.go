@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/context"
 	"net/http"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -50,6 +51,11 @@ func structToFlatMap(obj interface{}) map[string]interface{} {
 			for k, v := range nestedMap {
 				result[fieldName+"."+k] = v
 			}
+		} else if (field.Kind() == reflect.Ptr ||
+			field.Kind() == reflect.Array ||
+			field.Kind() == reflect.Slice ||
+			field.Kind() == reflect.Map) && field.IsNil() {
+			result[fieldName] = nil
 		} else {
 			result[fieldName] = field.Interface()
 		}
@@ -80,13 +86,10 @@ func appMiddleware(next http.Handler) http.Handler {
 }
 
 func getApps(w http.ResponseWriter, r *http.Request) {
+
 	type app struct {
-		ID        string `json:"id"`
-		Title     string `json:"title"`
-		Icon      string `json:"icon"`
-		Color     string `json:"color"`
-		DarkColor string `json:"dark_color"`
-		Active    bool   `json:"active"`
+		util.App
+		ID string `json:"id"`
 	}
 
 	apps := make([]app, 0)
@@ -94,14 +97,14 @@ func getApps(w http.ResponseWriter, r *http.Request) {
 	for k, a := range util.Config.Apps {
 
 		apps = append(apps, app{
-			ID:        k,
-			Title:     a.Title,
-			Icon:      a.Icon,
-			Color:     a.Color,
-			DarkColor: a.DarkColor,
-			Active:    a.Active,
+			App: a,
+			ID:  k,
 		})
 	}
+
+	sort.Slice(apps, func(i, j int) bool {
+		return apps[i].Priority > apps[j].Priority
+	})
 
 	helpers.WriteJSON(w, http.StatusOK, apps)
 }
@@ -137,6 +140,10 @@ func deleteApp(w http.ResponseWriter, r *http.Request) {
 func setAppOption(store db.Store, appID string, field string, val interface{}) error {
 	key := "apps." + appID + "." + field
 
+	if val == nil {
+		return store.DeleteOptions(key)
+	}
+
 	v := fmt.Sprintf("%v", val)
 
 	if err := store.SetOption(key, v); err != nil {
@@ -168,15 +175,25 @@ func setApp(w http.ResponseWriter, r *http.Request) {
 
 	for k, v := range options {
 		t := reflect.TypeOf(v)
-		switch t.Kind() {
-		case reflect.Slice, reflect.Array:
-			newV, err := json.Marshal(v)
-			if err != nil {
-				helpers.WriteErrorStatus(w, err.Error(), http.StatusInternalServerError)
-				return
+
+		if v != nil {
+			switch t.Kind() {
+			case reflect.String:
+				if v == "" {
+					v = nil
+				}
+			case reflect.Slice, reflect.Array:
+				newV, err := json.Marshal(v)
+				if err != nil {
+					helpers.WriteErrorStatus(w, err.Error(), http.StatusInternalServerError)
+					return
+				}
+				v = string(newV)
+				if v == "[]" {
+					v = nil
+				}
+			default:
 			}
-			v = string(newV)
-		default:
 		}
 
 		if err := setAppOption(store, appID, k, v); err != nil {

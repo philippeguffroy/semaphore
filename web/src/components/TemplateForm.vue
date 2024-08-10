@@ -149,10 +149,10 @@
         <v-text-field
           v-model="item.playbook"
           :label="fieldLabel('playbook')"
-          :rules="[v => !!v || $t('playbook_filename_required')]"
+          :rules="isFieldRequired('playbook') ? [v => !!v || $t('playbook_filename_required')] : []"
           outlined
           dense
-          required
+          :required="isFieldRequired('playbook')"
           :disabled="formSaving"
           :placeholder="$t('exampleSiteyml')"
           v-if="needField('playbook')"
@@ -177,10 +177,10 @@
           :items="repositories"
           item-value="id"
           item-text="name"
-          :rules="[v => !!v || $t('repository_required')]"
+          :rules="isFieldRequired('repository') ? [v => !!v || $t('repository_required')] : []"
           outlined
           dense
-          required
+          :required="isFieldRequired('repository')"
           :disabled="formSaving"
           v-if="needField('repository')"
         ></v-select>
@@ -191,10 +191,10 @@
           :items="environment"
           item-value="id"
           item-text="name"
-          :rules="[v => !!v || $t('environment_required')]"
+          :rules="isFieldRequired('environment') ? [v => !!v || $t('environment_required')] : []"
           outlined
           dense
-          required
+          :required="isFieldRequired('environment')"
           :disabled="formSaving"
           v-if="needField('environment')"
         ></v-select>
@@ -245,11 +245,11 @@
         <v-checkbox
           class="mt-0"
           :label="$t('iWantToRunATaskByTheCronOnlyForForNewCommitsOfSome')"
-          v-model="cronRepositoryIdVisible"
+          v-model="cronVisible"
         />
 
         <v-select
-          v-if="cronRepositoryIdVisible"
+          v-if="cronVisible"
           v-model="cronRepositoryId"
           :label="$t('repository2')"
           :placeholder="$t('cronChecksNewCommitBeforeRun')"
@@ -264,7 +264,7 @@
         ></v-select>
 
         <v-select
-          v-if="cronRepositoryIdVisible"
+          v-if="cronVisible"
           v-model="cronFormat"
           :label="$t('Check interval')"
           :hint="$t('New commit check interval')"
@@ -369,7 +369,7 @@ export default {
       buildTemplates: null,
       cronFormat: '* * * * *',
       cronRepositoryId: null,
-      cronRepositoryIdVisible: false,
+      cronVisible: false,
 
       helpDialog: null,
       helpKey: null,
@@ -431,6 +431,10 @@ export default {
 
     needField(f) {
       return this.fields[f] != null;
+    },
+
+    isFieldRequired(f) {
+      return this.fields[f] != null && !this.fields[f].optional;
     },
 
     setSurveyVars(v) {
@@ -529,7 +533,7 @@ export default {
         if (schedule != null) {
           this.cronFormat = schedule.cron_format;
           this.cronRepositoryId = schedule.repository_id;
-          this.cronRepositoryIdVisible = this.cronRepositoryId != null;
+          this.cronVisible = this.cronRepositoryId != null;
         }
       }
 
@@ -565,7 +569,7 @@ export default {
 
     async afterSave(newItem) {
       if (newItem || this.schedules.length === 0) {
-        if (this.cronFormat != null && this.cronFormat !== '' && this.cronRepositoryIdVisible) {
+        if (this.cronFormat != null && this.cronFormat !== '' && this.cronVisible) {
           // new schedule
           await axios({
             method: 'post',
@@ -576,12 +580,13 @@ export default {
               template_id: newItem ? newItem.id : this.itemId,
               cron_format: this.cronFormat,
               repository_id: this.cronRepositoryId,
+              active: true,
             },
           });
         }
       } else if (this.schedules.length > 1) {
         // do nothing
-      } else if (this.cronFormat == null || this.cronFormat === '' || !this.cronRepositoryIdVisible) {
+      } else if (this.cronFormat == null || this.cronFormat === '' || !this.cronVisible) {
         // drop schedule
         await axios({
           method: 'delete',

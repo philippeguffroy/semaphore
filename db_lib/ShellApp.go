@@ -83,23 +83,24 @@ func (t *ShellApp) makeShellCmd(args []string, environmentVars *[]string) *exec.
 	var command string
 	var appArgs []string
 	switch t.App {
-	case db.TemplateBash:
+	case db.AppBash:
 		command = "bash"
-	case db.TemplatePython:
+	case db.AppPython:
 		command = "python3"
-	case db.TemplatePowerShell:
+	case db.AppPowerShell:
 		command = "powershell"
 		appArgs = []string{"-File"}
 	default:
+		command = string(t.App)
 	}
 
-	if app, ok := util.Config.Apps[string(t.App)]; ok && app.AppPath != "" {
-		command = app.AppPath
+	if app, ok := util.Config.Apps[string(t.App)]; ok {
+		if app.AppPath != "" {
+			command = app.AppPath
+		}
 		if app.AppArgs != nil {
 			appArgs = app.AppArgs
 		}
-	} else {
-		command = string(t.App)
 	}
 
 	return t.makeCmd(command, append(appArgs, args...), environmentVars)
