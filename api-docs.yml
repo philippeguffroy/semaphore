@@ -712,6 +712,8 @@ definitions:
       app:
         type: string
         example: ansible
+      git_branch:
+        type: string
       survey_vars:
         type: array
         items:
@@ -754,6 +756,8 @@ definitions:
       suppress_success_alerts:
         type: boolean
       app:
+        type: string
+      git_branch:
         type: string
   TemplateSurveyVar:
     type: object
