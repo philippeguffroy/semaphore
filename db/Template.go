@@ -90,7 +90,7 @@ type Template struct {
 	Autorun bool `db:"autorun" json:"autorun"`
 
 	// override variables
-	GitBranch string `db:"git_branch" json:"git_branch"`
+	GitBranch *string `db:"git_branch" json:"git_branch"`
 
 	// SurveyVarsJSON used internally for read from database.
 	// It is not used for store survey vars to database.

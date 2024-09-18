@@ -451,8 +451,8 @@ func (t *LocalJob) prepareRun() error {
 	}
 
 	// Override git branch from template if set
-	if t.Template.GitBranch != "" {
-		t.Repository.GitBranch = t.Template.GitBranch
+	if t.Template.GitBranch != nil && *t.Template.GitBranch != "" {
+		t.Repository.GitBranch = *t.Template.GitBranch
 	}
 
 	// Override git branch from task if set
